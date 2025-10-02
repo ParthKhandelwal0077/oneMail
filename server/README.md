@@ -1,0 +1,297 @@
+# OneBox Email Aggregator
+
+A powerful email aggregation service that synchronizes multiple IMAP email accounts in real-time and provides a seamless, searchable, and AI-powered experience.
+
+## Features
+
+- 🔐 **OAuth Authentication** - Secure Gmail authentication using Google OAuth 2.0
+- 📧 **Real-time IMAP Sync** - Live synchronization with IMAP servers using IDLE protocol
+- 🔍 **Elasticsearch Search** - Advanced full-text search with filters and pagination
+- 📊 **Multi-account Support** - Aggregate emails from multiple Gmail accounts
+- 🚀 **Real-time Updates** - Instant email notifications and synchronization
+- 🛡️ **Secure & Scalable** - Built with security best practices and error handling
+
+## Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │   OneBox API    │    │   Elasticsearch │
+│   (React)       │◄──►│   (Express)     │◄──►│   (Search)      │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐
+                       │   Gmail IMAP    │
+                       │   (Real-time)   │
+                       └─────────────────┘
+```
+
+## Prerequisites
+
+- Node.js (v16 or higher)
+- Elasticsearch (v7.x or v8.x)
+- Google Cloud Console project with Gmail API enabled
+- Google OAuth 2.0 credentials
+
+## Quick Setup
+
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Set Up Google OAuth Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing one
+3. Enable the Gmail API
+4. Create OAuth 2.0 credentials
+5. Download the credentials JSON file
+6. Save it as `credentials.json` in the server root directory
+
+### 3. Configure Environment Variables
+
+Create a `.env` file in the server directory:
+
+```env
+# Server Configuration
+NODE_ENV=development
+PORT=5000
+CLIENT_URL=http://localhost:3000
+
+# Elasticsearch Configuration
+ELASTICSEARCH_URL=http://localhost:9200
+ELASTICSEARCH_USERNAME=elastic
+ELASTICSEARCH_PASSWORD=password
+
+# Google OAuth (if not using credentials.json)
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:5000/api/auth/gmail/callback
+```
+
+### 4. Start Elasticsearch
+
+```bash
+# Using Docker
+docker run -d \
+  --name elasticsearch \
+  -p 9200:9200 \
+  -p 9300:9300 \
+  -e "discovery.type=single-node" \
+  -e "xpack.security.enabled=false" \
+  elasticsearch:8.11.0
+
+# Or install locally
+# Follow Elasticsearch installation guide for your OS
+```
+
+### 5. Start the Server
+
+```bash
+# Development mode
+npm run dev
+
+# Production mode
+npm run build
+npm start
+```
+
+## API Endpoints
+
+### Authentication
+
+- `GET /api/auth/gmail?userId={userId}` - Get OAuth URL
+- `GET /api/auth/gmail/callback?code={code}&state={userId}` - OAuth callback
+- `GET /api/auth/status/{userId}` - Check auth status
+- `DELETE /api/auth/revoke/{userId}` - Revoke authentication
+
+### Email Synchronization
+
+- `POST /api/sync/start/{userId}` - Start email sync
+- `POST /api/sync/stop/{userId}` - Stop email sync
+- `GET /api/sync/status/{userId}` - Get sync status
+- `GET /api/sync/statuses` - Get all sync statuses
+- `GET /api/sync/health` - Health check
+
+### Email Operations
+
+- `GET /api/emails/search/{userId}?query={query}&folder={folder}` - Search emails
+- `GET /api/emails/recent/{userId}` - Get recent emails
+- `GET /api/emails/{userId}/{emailId}` - Get specific email
+- `GET /api/emails/stats/{userId}` - Get email statistics
+- `PATCH /api/emails/{userId}/{emailId}/read` - Mark as read/unread
+- `PATCH /api/emails/{userId}/{emailId}/star` - Star/unstar email
+- `DELETE /api/emails/{userId}/{emailId}` - Delete email
+
+## Usage Example
+
+### 1. Authenticate with Gmail
+
+```bash
+# Get OAuth URL
+curl "http://localhost:5000/api/auth/gmail?userId=user123"
+
+# User visits the returned URL and authorizes
+# Then handle the callback (this happens automatically)
+```
+
+### 2. Start Email Synchronization
+
+```bash
+# Start syncing emails
+curl -X POST "http://localhost:5000/api/sync/start/user123"
+```
+
+### 3. Search Emails
+
+```bash
+# Search for emails
+curl "http://localhost:5000/api/emails/search/user123?query=meeting&folder=INBOX"
+
+# Get recent emails
+curl "http://localhost:5000/api/emails/recent/user123"
+
+# Get email statistics
+curl "http://localhost:5000/api/emails/stats/user123"
+```
+
+### 4. Check Sync Status
+
+```bash
+# Check sync status
+curl "http://localhost:5000/api/sync/status/user123"
+
+# Get all sync statuses
+curl "http://localhost:5000/api/sync/statuses"
+```
+
+## Project Structure
+
+```
+server/
+├── src/
+│   ├── controllers/          # MVC Controllers
+│   │   ├── AuthController.ts
+│   │   ├── EmailController.ts
+│   │   └── SyncController.ts
+│   ├── services/             # Business Logic
+│   │   ├── authService.ts
+│   │   ├── elasticsearchService.ts
+│   │   └── emailSyncService.ts
+│   ├── routes/               # API Routes
+│   │   ├── auth.ts
+│   │   ├── emails.ts
+│   │   ├── sync.ts
+│   │   └── index.ts
+│   ├── middleware/           # Express Middleware
+│   │   ├── errorHandler.ts
+│   │   └── notFound.ts
+│   ├── types/                # TypeScript Types
+│   │   └── index.ts
+│   └── index.ts              # Main Server File
+├── credentials.json          # Google OAuth Credentials
+├── package.json
+└── README.md
+```
+
+## Key Components
+
+### Authentication Service
+- Handles Google OAuth 2.0 flow
+- Manages access and refresh tokens
+- Automatic token refresh
+
+### Email Sync Service
+- Real-time IMAP synchronization using IDLE
+- Fetches recent emails (last 30 days)
+- Handles connection errors and reconnection
+
+### Elasticsearch Service
+- Full-text search with advanced queries
+- Email indexing and categorization
+- Statistics and analytics
+
+### Controllers
+- RESTful API endpoints
+- Request validation and error handling
+- Response formatting
+
+## Error Handling
+
+The application includes comprehensive error handling:
+
+- OAuth authentication errors
+- IMAP connection failures
+- Elasticsearch indexing errors
+- Graceful shutdown on SIGINT/SIGTERM
+- Uncaught exception handling
+
+## Security Features
+
+- Helmet.js for security headers
+- CORS configuration
+- Input validation
+- Error message sanitization
+- Secure token storage
+
+## Monitoring
+
+- Health check endpoints
+- Sync status monitoring
+- Error logging
+- Performance metrics
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start in development mode
+npm run dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Elasticsearch Connection Error**
+   - Ensure Elasticsearch is running on port 9200
+   - Check ELASTICSEARCH_URL environment variable
+
+2. **OAuth Authentication Error**
+   - Verify credentials.json is properly configured
+   - Check redirect URIs in Google Cloud Console
+
+3. **IMAP Connection Error**
+   - Ensure Gmail IMAP is enabled
+   - Check access token validity
+
+### Logs
+
+The application provides detailed logging for debugging:
+
+- Authentication events
+- IMAP connection status
+- Elasticsearch operations
+- Error details
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License.
