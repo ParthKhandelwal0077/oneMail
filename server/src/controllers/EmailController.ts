@@ -17,8 +17,10 @@ export class EmailController {
       query, 
       folder, 
       email, 
+      from,
       dateFrom, 
       dateTo,
+      category,
       page = '1',
       limit = '50'
     } = req.query;
@@ -35,8 +37,10 @@ export class EmailController {
         query: query as string,
         folder: folder as string,
         email: email as string,
+        from: from as string,
         dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
-        dateTo: dateTo ? new Date(dateTo as string) : undefined
+        dateTo: dateTo ? new Date(dateTo as string) : undefined,
+        category: category as any
       };
 
       const emails = await searchEmails(userId, searchQuery);

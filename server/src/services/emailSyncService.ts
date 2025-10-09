@@ -1,7 +1,8 @@
 import { ImapFlow } from 'imapflow';
 import { getAccessToken, getUserTokens } from './authService';
-import { indexEmail } from './elasticsearchService';
-import { ImapClient, SyncStatus } from '../types';
+import { indexEmail, checkEmailExists } from './elasticsearchService';
+import { categorizeEmail } from './aiCategorizationService';
+import { EmailCategory, ImapClient, SyncStatus } from '../types';
 
 // Store active IMAP clients for each user
 const userClients: Map<string, ImapClient> = new Map();
@@ -9,7 +10,7 @@ const syncStatuses: Map<string, SyncStatus> = new Map();
 
 export async function fetchRecentEmails(userId: string, email: string): Promise<ImapFlow> {
   try {
-    const accessToken = await getAccessToken(userId);
+    const accessToken = await getAccessToken(userId, email);
     const client = new ImapFlow({
       host: 'imap.gmail.com',
       port: 993,
@@ -28,10 +29,12 @@ export async function fetchRecentEmails(userId: string, email: string): Promise<
     const mailbox = await client.mailboxOpen('INBOX');
     const folder = mailbox.path;
 
-    // Fetch emails from the last 30 days
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // Get emails from yesterday (24 hours ago)
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    console.log(`📅 Fetching emails since: ${yesterday.toISOString()}`);
+    
     const messages = await client.fetch(
-      { since: thirtyDaysAgo },
+      { since: yesterday },
       { envelope: true, source: true, uid: true }
     );
 
@@ -40,20 +43,51 @@ export async function fetchRecentEmails(userId: string, email: string): Promise<
     
     for await (const message of messages) {
       try {
+        const emailDate = message.envelope?.date || new Date();
         const emailData = {
           userId,
           uid: message.uid,
           subject: message.envelope?.subject || 'No Subject',
           from: message.envelope?.from?.[0]?.address || 'unknown@example.com',
-          date: message.envelope?.date || new Date()
+          date: emailDate
         };
         
-        console.log(`  📧 ${emailData.uid}: ${emailData.subject} from ${emailData.from}`);
+        // Validate email date is within our desired range
+        if (emailDate < yesterday) {
+          console.log(`  ⏭️  Skipping email ${emailData.uid}: date ${emailDate.toISOString()} is before our cutoff`);
+          continue;
+        }
+        
+        console.log(`  📧 ${emailData.uid}: ${emailData.subject} from ${emailData.from} (${emailDate.toISOString()})`);
+        
+        // Check if email already exists in Elasticsearch
+        const emailId = `${userId}-${email}-${message.uid}`;
+        const existingEmail = await checkEmailExists(emailId);
+        
+        if (existingEmail) {
+          console.log(`  ⏭️  Skipping email ${emailData.uid}: already indexed`);
+          continue;
+        }
+        
+        // Categorize email using AI
+        let category = 'Uncategorized';
+        
+        try {
+          const categorizationResult = await categorizeEmail(
+            message.envelope?.subject || 'No Subject',
+            message.source?.toString() || '',
+            message.envelope?.from?.[0]?.address
+          );
+          category = categorizationResult.category;
+          console.log(`  🤖 Categorized as: ${category}`);
+        } catch (error) {
+          console.error(`  ❌ Failed to categorize email ${message.uid}:`, error);
+        }
         
         await indexEmail(userId, email, folder, {
           ...message,
           body: message.source?.toString() || ''
-        });
+        }, category as EmailCategory);
         
         emailCount++;
       } catch (error) {
@@ -109,10 +143,35 @@ export async function startIdleMonitoring(userId: string, email: string, client:
           
           console.log(`  📧 New: ${emailData.uid}: ${emailData.subject} from ${emailData.from}`);
           
+          // Check if email already exists in Elasticsearch
+          const emailId = `${userId}-${email}-${message.uid}`;
+          const existingEmail = await checkEmailExists(emailId);
+          
+          if (existingEmail) {
+            console.log(`  ⏭️  Skipping new email ${emailData.uid}: already indexed`);
+            return;
+          }
+          
+          // Categorize new email using AI
+          let category = 'Uncategorized';
+          
+          try {
+            const categorizationResult = await categorizeEmail(
+              message.envelope?.subject || 'No Subject',
+              message.source?.toString() || '',
+              message.envelope?.from?.[0]?.address
+            );
+            category = categorizationResult.category;
+            
+            console.log(`  🤖 New email categorized as: ${category}`);
+          } catch (error) {
+            console.error(`  ❌ Failed to categorize new email ${message.uid}:`, error);
+          }
+          
           await indexEmail(userId, email, folder, {
             ...message,
             body: message.source?.toString() || ''
-          });
+          }, category as EmailCategory);
         }
       } catch (error) {
         console.error(`  ❌ Failed to process new email for ${userId}:`, error);
@@ -169,10 +228,15 @@ export async function startSync(userId: string, email: string): Promise<void> {
       lastSync: new Date()
     });
 
-    // Check if user has valid tokens
+    // Check if user has valid tokens for this email
     const tokens = getUserTokens(userId);
-    if (!tokens) {
+    if (!tokens || tokens.length === 0) {
       throw new Error(`No authorization tokens found for user ${userId}`);
+    }
+    
+    const emailToken = tokens.find(token => token.email === email);
+    if (!emailToken) {
+      throw new Error(`No authorization token found for email ${email} for user ${userId}`);
     }
 
     // Fetch recent emails and start monitoring

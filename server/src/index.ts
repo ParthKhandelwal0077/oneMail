@@ -9,6 +9,7 @@ import { notFound } from './middleware/notFound';
 import apiRoutes from './routes';
 import { setupElasticsearch, closeElasticsearch } from './services/elasticsearchService';
 import { gracefulShutdown } from './services/emailSyncService';
+import { checkDatabaseConnection, closePrismaConnection } from './config/prisma';
 
 // Load environment variables
 dotenv.config();
@@ -53,14 +54,27 @@ app.use(express.static('public'));
 app.use('/api', apiRoutes);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    service: 'OneBox Email Aggregator',
-    version: '1.0.0',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
+app.get('/health', async (req, res) => {
+  try {
+    const dbConnected = await checkDatabaseConnection();
+    
+    res.status(200).json({
+      status: 'OK',
+      service: 'OneBox Email Aggregator',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      database: dbConnected ? 'connected' : 'disconnected',
+      elasticsearch: 'checking...' // Will be updated by Elasticsearch setup
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      service: 'OneBox Email Aggregator',
+      timestamp: new Date().toISOString(),
+      error: 'Health check failed'
+    });
+  }
 });
 
 // Quick start endpoint for testing
@@ -85,21 +99,35 @@ app.get('/start', (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-// Initialize Elasticsearch
-setupElasticsearch()
-  .then(() => {
+// Initialize services
+async function initializeServices() {
+  try {
+    // Check database connection
+    const dbConnected = await checkDatabaseConnection();
+    if (!dbConnected) {
+      console.error('❌ Database connection failed');
+      process.exit(1);
+    }
+    console.log('✅ Database connected successfully');
+
+    // Initialize Elasticsearch
+    await setupElasticsearch();
     console.log('✅ Elasticsearch initialized successfully');
-  })
-  .catch(err => {
-    console.error('❌ Failed to initialize Elasticsearch:', err);
-    console.log('⚠️  Server will start without Elasticsearch functionality');
-  });
+  } catch (error) {
+    console.error('❌ Service initialization failed:', error);
+    process.exit(1);
+  }
+}
+
+// Initialize services
+initializeServices();
 
 // Graceful shutdown handlers
 process.on('SIGINT', async () => {
   console.log('\n🛑 Received SIGINT. Gracefully shutting down...');
   await gracefulShutdown();
   await closeElasticsearch();
+  await closePrismaConnection();
   console.log('✅ Shutdown complete.');
   process.exit(0);
 });
@@ -108,6 +136,7 @@ process.on('SIGTERM', async () => {
   console.log('\n🛑 Received SIGTERM. Gracefully shutting down...');
   await gracefulShutdown();
   await closeElasticsearch();
+  await closePrismaConnection();
   console.log('✅ Shutdown complete.');
   process.exit(0);
 });

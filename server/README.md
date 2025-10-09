@@ -7,8 +7,10 @@ A powerful email aggregation service that synchronizes multiple IMAP email accou
 - 🔐 **OAuth Authentication** - Secure Gmail authentication using Google OAuth 2.0
 - 📧 **Real-time IMAP Sync** - Live synchronization with IMAP servers using IDLE protocol
 - 🔍 **Elasticsearch Search** - Advanced full-text search with filters and pagination
+- 🤖 **AI Email Categorization** - Smart categorization using Google Gemini LLM
 - 📊 **Multi-account Support** - Aggregate emails from multiple Gmail accounts
 - 🚀 **Real-time Updates** - Instant email notifications and synchronization
+- 🏷️ **Smart Tagging** - Automatic email categorization with confidence scores
 - 🛡️ **Secure & Scalable** - Built with security best practices and error handling
 
 ## Architecture
@@ -24,6 +26,12 @@ A powerful email aggregation service that synchronizes multiple IMAP email accou
                        │   Gmail IMAP    │
                        │   (Real-time)   │
                        └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐
+                       │   Gemini AI     │
+                       │  (Categorization)│
+                       └─────────────────┘
 ```
 
 ## Prerequisites
@@ -32,6 +40,7 @@ A powerful email aggregation service that synchronizes multiple IMAP email accou
 - Elasticsearch (v7.x or v8.x)
 - Google Cloud Console project with Gmail API enabled
 - Google OAuth 2.0 credentials
+- Google Gemini API key (for AI categorization)
 
 ## Quick Setup
 
@@ -117,13 +126,22 @@ npm start
 
 ### Email Operations
 
-- `GET /api/emails/search/{userId}?query={query}&folder={folder}` - Search emails
+- `GET /api/emails/search/{userId}?query={query}&folder={folder}&category={category}` - Search emails
 - `GET /api/emails/recent/{userId}` - Get recent emails
 - `GET /api/emails/{userId}/{emailId}` - Get specific email
 - `GET /api/emails/stats/{userId}` - Get email statistics
 - `PATCH /api/emails/{userId}/{emailId}/read` - Mark as read/unread
 - `PATCH /api/emails/{userId}/{emailId}/star` - Star/unstar email
 - `DELETE /api/emails/{userId}/{emailId}` - Delete email
+
+### AI Categorization
+
+- `POST /api/ai/categorize` - Categorize a single email
+- `POST /api/ai/categorize/batch` - Batch categorize multiple emails
+- `POST /api/ai/recategorize/{userId}` - Recategorize user's emails
+- `GET /api/ai/categories` - Get available categories
+- `GET /api/ai/stats/{userId}` - Get category statistics
+- `GET /api/ai/status` - Check AI service status
 
 ## Usage Example
 
@@ -167,6 +185,38 @@ curl "http://localhost:5000/api/sync/status/user123"
 curl "http://localhost:5000/api/sync/statuses"
 ```
 
+### 5. AI Categorization
+
+```bash
+# Categorize a single email
+curl -X POST "http://localhost:5000/api/ai/categorize" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Meeting Confirmation",
+    "body": "Hi, I confirm our meeting for tomorrow at 2 PM.",
+    "from": "colleague@company.com"
+  }'
+
+# Get available categories
+curl "http://localhost:5000/api/ai/categories"
+
+# Get category statistics
+curl "http://localhost:5000/api/ai/stats/user123"
+
+# Check AI service status
+curl "http://localhost:5000/api/ai/status"
+```
+
+### 6. Search with Category Filter
+
+```bash
+# Search emails by category
+curl "http://localhost:5000/api/emails/search/user123?category=Interested"
+
+# Search with multiple filters
+curl "http://localhost:5000/api/emails/search/user123?query=meeting&category=Meeting Booked&folder=INBOX"
+```
+
 ## Project Structure
 
 ```
@@ -175,15 +225,20 @@ server/
 │   ├── controllers/          # MVC Controllers
 │   │   ├── AuthController.ts
 │   │   ├── EmailController.ts
-│   │   └── SyncController.ts
+│   │   ├── SyncController.ts
+│   │   └── AIController.ts
 │   ├── services/             # Business Logic
 │   │   ├── authService.ts
 │   │   ├── elasticsearchService.ts
-│   │   └── emailSyncService.ts
+│   │   ├── emailSyncService.ts
+│   │   └── aiCategorizationService.ts
+│   ├── scripts/              # Utility Scripts
+│   │   └── testCategorization.ts
 │   ├── routes/               # API Routes
 │   │   ├── auth.ts
 │   │   ├── emails.ts
 │   │   ├── sync.ts
+│   │   ├── ai.ts
 │   │   └── index.ts
 │   ├── middleware/           # Express Middleware
 │   │   ├── errorHandler.ts

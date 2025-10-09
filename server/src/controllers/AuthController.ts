@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { getAuthUrl, handleCallback, getUserTokens, deleteUserTokens, getAllUserIds } from '../services/authService';
+import { getAuthUrl, handleCallback, getUserTokens, deleteUserTokens, getAllUserIds, getAllUserEmails, deleteUserTokenByEmail } from '../services/authService';
 import { asyncHandler } from '../middleware/errorHandler';
 
 export class AuthController {
@@ -67,7 +67,7 @@ export class AuthController {
 
     const tokens = getUserTokens(userId);
     
-    if (!tokens) {
+    if (!tokens || tokens.length === 0) {
       return res.status(404).json({
         success: false,
         error: 'No authentication found',
@@ -79,10 +79,13 @@ export class AuthController {
       success: true,
       data: {
         userId,
-        email: tokens.email,
+        emails: tokens.map(token => ({
+          email: token.email,
+          hasRefreshToken: !!token.refresh_token,
+          tokenExpiry: new Date(token.expiry_date)
+        })),
         isAuthenticated: true,
-        hasRefreshToken: !!tokens.refresh_token,
-        tokenExpiry: new Date(tokens.expiry_date)
+        totalAccounts: tokens.length
       }
     });
   });
@@ -128,6 +131,61 @@ export class AuthController {
       data: {
         users,
         count: users?.length
+      }
+    });
+  });
+
+  // Get all emails for a user
+  getUserEmails = asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const emails = getAllUserEmails(userId);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        userId,
+        emails,
+        count: emails.length
+      }
+    });
+  });
+
+  // Revoke authentication for a specific email
+  revokeEmailAuth = asyncHandler(async (req: Request, res: Response) => {
+    const { userId, email } = req.params;
+
+    if (!userId || !email) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and email are required'
+      });
+    }
+
+    const deleted = deleteUserTokenByEmail(userId, email);
+    
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        error: 'No authentication found',
+        message: `No authentication found for email ${email} for user ${userId}`
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Authentication revoked successfully for ${email}`,
+      data: {
+        userId,
+        email,
+        revoked: true
       }
     });
   });

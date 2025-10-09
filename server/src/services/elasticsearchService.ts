@@ -1,5 +1,5 @@
 import { Client } from '@elastic/elasticsearch';
-import { SearchQuery, EmailMessage } from '../types';
+import { SearchQuery, EmailMessage, EmailCategory } from '../types';
 
 // Elasticsearch client configuration
 const esClient = new Client({ 
@@ -55,9 +55,16 @@ export async function setupElasticsearch(): Promise<void> {
             },
             isRead: { type: 'boolean' },
             isStarred: { type: 'boolean' },
-            hasAttachments: { type: 'boolean' },
-            createdAt: { type: 'date' },
-            updatedAt: { type: 'date' }
+              hasAttachments: { type: 'boolean' },
+              category: { 
+                type: 'keyword',
+                fields: {
+                  text: { type: 'text', analyzer: 'standard' }
+                }
+              },
+              categorizedAt: { type: 'date' },
+              createdAt: { type: 'date' },
+              updatedAt: { type: 'date' }
           }
         },
         settings: {
@@ -82,11 +89,25 @@ export async function setupElasticsearch(): Promise<void> {
   }
 }
 
+export async function checkEmailExists(emailId: string): Promise<boolean> {
+  try {
+    const result = await esClient.exists({
+      index: INDEX_NAME,
+      id: emailId
+    });
+    return result;
+  } catch (error) {
+    console.error(`❌ Failed to check if email exists ${emailId}:`, error);
+    return false;
+  }
+}
+
 export async function indexEmail(
   userId: string, 
   email: string, 
   folder: string, 
-  message: any
+  message: any,
+  category?: EmailCategory,
 ): Promise<void> {
   try {
     const emailData = {
@@ -102,6 +123,8 @@ export async function indexEmail(
       isRead: false,
       isStarred: false,
       hasAttachments: message.attachments && message.attachments.length > 0,
+      category: category || 'Uncategorized',
+      categorizedAt: category ? new Date() : undefined,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -128,8 +151,10 @@ export async function searchEmails(
       query,
       folder,
       email: emailFilter,
+      from: fromFilter,
       dateFrom,
-      dateTo
+      dateTo,
+      category
     } = searchQuery;
 
     // Base query with user filter
@@ -161,6 +186,20 @@ export async function searchEmails(
     // Add email filter
     if (emailFilter) {
       baseQuery.bool.filter.push({ term: { email: emailFilter } });
+    }
+
+    // Add from filter
+    if (fromFilter) {
+      baseQuery.bool.filter.push({ 
+        match: { 
+          from: fromFilter 
+        } 
+      });
+    }
+
+    // Add category filter
+    if (category) {
+      baseQuery.bool.filter.push({ term: { category } });
     }
 
     // Add date range filter
@@ -263,30 +302,35 @@ export async function getEmailStats(userId: string): Promise<any> {
       query: {
         term: { userId }
       },
-      aggs: {
-        total_emails: {
-          value_count: {
-            field: 'uid'
+        aggs: {
+          total_emails: {
+            value_count: {
+              field: 'uid'
+            }
+          },
+          folders: {
+            terms: {
+              field: 'folder'
+            }
+          },
+          emails: {
+            terms: {
+              field: 'email'
+            }
+          },
+          categories: {
+            terms: {
+              field: 'category'
+            }
+          },
+          date_range: {
+            date_histogram: {
+              field: 'date',
+              calendar_interval: 'day',
+              min_doc_count: 1
+            }
           }
         },
-        folders: {
-          terms: {
-            field: 'folder'
-          }
-        },
-        emails: {
-          terms: {
-            field: 'email'
-          }
-        },
-        date_range: {
-          date_histogram: {
-            field: 'date',
-            calendar_interval: 'day',
-            min_doc_count: 1
-          }
-        }
-      },
       size: 0
     });
 
@@ -302,12 +346,14 @@ export async function getEmailStats(userId: string): Promise<any> {
     const totalEmailsAgg = result.aggregations.total_emails as any;
     const foldersAgg = result.aggregations.folders as any;
     const emailsAgg = result.aggregations.emails as any;
+    const categoriesAgg = result.aggregations.categories as any;
     const dateRangeAgg = result.aggregations.date_range as any;
 
     return {
       totalEmails: totalEmailsAgg?.value || 0,
       folders: foldersAgg?.buckets || [],
       emailAccounts: emailsAgg?.buckets || [],
+      categories: categoriesAgg?.buckets || [],
       dailyStats: dateRangeAgg?.buckets || []
     };
   } catch (error) {

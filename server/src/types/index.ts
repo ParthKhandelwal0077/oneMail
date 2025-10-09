@@ -10,6 +10,9 @@ export interface ImapClient {
   lock: any;
 }
 
+// Email category types
+export type EmailCategory = 'Interested' | 'Meeting Booked' | 'Not Interested' | 'Spam' | 'Out of Office' | 'Uncategorized';
+
 export interface EmailMessage {
   userId: string;
   uid: string;
@@ -21,14 +24,18 @@ export interface EmailMessage {
   email: string;
   isRead?: boolean;
   isStarred?: boolean;
+  category: EmailCategory;
+  categorizedAt?: Date;
 }
 
 export interface SearchQuery {
   query?: string;
   folder?: string;
   email?: string;
+  from?: string;
   dateFrom?: Date;
   dateTo?: Date;
+  category?: EmailCategory;
 }
 
 export interface SyncStatus {

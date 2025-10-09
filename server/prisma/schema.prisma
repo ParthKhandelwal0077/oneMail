@@ -1,0 +1,32 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String          @id @default(uuid())
+  phoneNumber     String          @unique  // New: Unique phone number for authentication
+  password        String          // New: Hashed password
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  emailAccounts   EmailAccount[]  // One-to-many: User has many email accounts
+  slackWebhookUrl String?         // Per-user Slack webhook URL
+  customWebhookUrl String?        // Per-user custom webhook URL (e.g., webhook.site)
+}
+
+model EmailAccount {
+  id            String    @id @default(uuid())
+  userId        String
+  email         String    @unique  // e.g., user@gmail.com
+  accessToken   String
+  refreshToken  String?
+  expiryDate    DateTime
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

@@ -40,7 +40,7 @@ const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_u
 const SCOPES = ['https://mail.google.com/'];
 
 // In-memory storage (replace with DB in production)
-const userTokens: Map<string, UserTokens> = new Map();
+const userTokens: Map<string, UserTokens[]> = new Map();
 
 export function getAuthUrl(userId: string): string {
   return oAuth2Client.generateAuthUrl({
@@ -74,7 +74,20 @@ export async function handleCallback(code: string, userId: string): Promise<User
       refresh_token: tokens.refresh_token || undefined,
       expiry_date: tokens.expiry_date!
     };
-    userTokens.set(userId, userData);
+    
+    // Check if user already has tokens for this email
+    const existingTokens = userTokens.get(userId) || [];
+    const existingIndex = existingTokens.findIndex(token => token.email === email);
+    
+    if (existingIndex >= 0) {
+      // Update existing token for this email
+      existingTokens[existingIndex] = userData;
+    } else {
+      // Add new token for this email
+      existingTokens.push(userData);
+    }
+    
+    userTokens.set(userId, existingTokens);
     return userData;
   } catch (error) {
     console.error('Token exchange failed:', error);
@@ -82,21 +95,39 @@ export async function handleCallback(code: string, userId: string): Promise<User
   }
 }
 
-export async function getAccessToken(userId: string): Promise<string> {
-  const tokens = userTokens.get(userId);
-  if (!tokens) throw new Error(`No tokens for user ${userId}`);
+export async function getAccessToken(userId: string, email?: string): Promise<string> {
+  const tokensArray = userTokens.get(userId);
+  if (!tokensArray || tokensArray.length === 0) {
+    throw new Error(`No tokens for user ${userId}`);
+  }
 
-  oAuth2Client.setCredentials(tokens);
-  if (tokens.expiry_date <= Date.now()) {
+  // If email is specified, find the specific token
+  let targetTokens = email 
+    ? tokensArray.find(tokens => tokens.email === email)
+    : tokensArray[0]; // Default to first token if no email specified
+
+  if (!targetTokens) {
+    throw new Error(`No tokens found for email ${email} for user ${userId}`);
+  }
+
+  oAuth2Client.setCredentials(targetTokens);
+  if (targetTokens.expiry_date <= Date.now()) {
     try {
       const { credentials } = await oAuth2Client.refreshAccessToken();
       const updatedTokens: UserTokens = {
-        ...tokens,
+        ...targetTokens,
         access_token: credentials.access_token!,
-        refresh_token: credentials.refresh_token || tokens.refresh_token,
+        refresh_token: credentials.refresh_token || targetTokens.refresh_token,
         expiry_date: credentials.expiry_date!
       };
-      userTokens.set(userId, updatedTokens);
+      
+      // Update the specific token in the array
+      const tokenIndex = tokensArray.findIndex(tokens => tokens.email === targetTokens.email);
+      if (tokenIndex >= 0) {
+        tokensArray[tokenIndex] = updatedTokens;
+        userTokens.set(userId, tokensArray);
+      }
+      
       oAuth2Client.setCredentials(updatedTokens);
     } catch (error) {
       console.error('Token refresh failed:', error);
@@ -106,14 +137,37 @@ export async function getAccessToken(userId: string): Promise<string> {
   return oAuth2Client.credentials.access_token!;
 }
 
-export function getUserTokens(userId: string): UserTokens | undefined {
+export function getUserTokens(userId: string): UserTokens[] | undefined {
   return userTokens.get(userId);
+}
+
+export function getUserTokenByEmail(userId: string, email: string): UserTokens | undefined {
+  const tokensArray = userTokens.get(userId);
+  return tokensArray?.find(tokens => tokens.email === email);
 }
 
 export function deleteUserTokens(userId: string): boolean {
   return userTokens.delete(userId);
 }
 
+export function deleteUserTokenByEmail(userId: string, email: string): boolean {
+  const tokensArray = userTokens.get(userId);
+  if (!tokensArray) return false;
+  
+  const filteredTokens = tokensArray.filter(tokens => tokens.email !== email);
+  if (filteredTokens.length === 0) {
+    return userTokens.delete(userId);
+  } else {
+    userTokens.set(userId, filteredTokens);
+    return true;
+  }
+}
+
 export function getAllUserIds(): string[] {
   return Array.from(userTokens.keys());
+}
+
+export function getAllUserEmails(userId: string): string[] {
+  const tokensArray = userTokens.get(userId);
+  return tokensArray?.map(tokens => tokens.email) || [];
 }

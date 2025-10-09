@@ -69,3 +69,5 @@ Thumbs.db
 # Uploads
 uploads/
 public/uploads/
+
+/src/generated/prisma

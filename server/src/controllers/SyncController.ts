@@ -25,7 +25,7 @@ export class SyncController {
     try {
       // Check if user has valid authentication tokens
       const tokens = getUserTokens(userId);
-      if (!tokens) {
+      if (!tokens || tokens.length === 0) {
         return res.status(401).json({
           success: false,
           error: 'User not authenticated',
@@ -33,15 +33,34 @@ export class SyncController {
         });
       }
 
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          error: 'Email is required',
+          message: 'Please specify which email account to sync'
+        });
+      }
+
+      // Check if the specified email has valid tokens
+      const emailToken = tokens.find(token => token.email === email);
+      if (!emailToken) {
+        return res.status(404).json({
+          success: false,
+          error: 'Email not found',
+          message: `No authentication found for email ${email}. Available emails: ${tokens.map(t => t.email).join(', ')}`
+        });
+      }
+
       // Start synchronization
-      await startSync(userId, tokens.email);
+      await startSync(userId, email);
       
       res.status(200).json({
         success: true,
         message: 'Email synchronization started successfully',
         data: {
           userId,
-          email: tokens.email,
+          email,
           status: 'syncing',
           startedAt: new Date()
         }

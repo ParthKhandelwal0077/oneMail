@@ -16,6 +16,8 @@ RUN npm ci
 
 # Copy source code and build
 COPY . .
+# Ensure prisma schema is present in build context and generate client
+RUN npx prisma generate --schema ./prisma/schema.prisma
 RUN npm run build
 
 # Runtime stage
@@ -30,6 +32,10 @@ RUN npm ci --only=production && npm cache clean --force
 
 # Copy built artifacts and any needed static assets
 COPY --from=build /app/dist ./dist
+# Copy prisma directory for runtime (for migrations if needed)
+COPY --from=build /app/prisma ./prisma
+# Copy the generated Prisma client
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
@@ -44,7 +50,7 @@ EXPOSE 5001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:5000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+    CMD node -e "require('http').get('http://localhost:5001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
 # Start the application
 CMD ["npm", "start"]
