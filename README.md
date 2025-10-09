@@ -1,25 +1,12 @@
 # OneMail
 
 A modern email application built with React, TypeScript, Node.js, and Express.
-
+frontend repo : https://github.com/ParthKhandelwal0077/one-mail-hub
 ## Project Structure
 
 ```
 oneMail/
-├── client/                 # React frontend
-│   ├── src/
-│   │   ├── components/     # Reusable React components
-│   │   ├── pages/          # Page components
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── utils/          # Utility functions
-│   │   ├── types/          # TypeScript type definitions
-│   │   ├── App.tsx         # Main App component
-│   │   └── index.tsx       # Entry point
-│   ├── public/             # Static assets
-│   ├── package.json        # Frontend dependencies
-│   ├── tailwind.config.js  # Tailwind CSS configuration
-│   └── tsconfig.json       # TypeScript configuration
-│
+├
 └── server/                 # Node.js backend
     ├── src/
     │   ├── controllers/    # MVC Controllers
@@ -38,11 +25,7 @@ oneMail/
 ## Features
 
 ### Frontend (React + TypeScript + Tailwind CSS)
-- Modern React 18 with TypeScript
-- Tailwind CSS for styling
-- Responsive design
-- Component-based architecture
-- Type-safe development
+github : https://github.com/ParthKhandelwal0077/one-mail-hub
 
 ### Backend (Node.js + Express + MVC Architecture)
 - RESTful API with Express.js
