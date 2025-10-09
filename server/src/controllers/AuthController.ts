@@ -6,7 +6,16 @@ import { asyncHandler } from '../middleware/errorHandler';
 export class AuthController {
   // Generate OAuth URL for Gmail authentication
   getAuthUrl = asyncHandler(async (req: Request, res: Response) => {
-    const userId = "e2e8e515-b404-4048-97bb-51eb545f9f8a";
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated',
+        message: 'Please login first to get Gmail authentication URL'
+      });
+    }
+
     const authUrl = getAuthUrl(userId);
     
     res.status(200).json({
@@ -65,7 +74,7 @@ export class AuthController {
       });
     }
 
-    const tokens = getUserTokens(userId);
+    const tokens = await getUserTokens(userId);
     
     if (!tokens || tokens.length === 0) {
       return res.status(404).json({
@@ -101,7 +110,7 @@ export class AuthController {
       });
     }
 
-    const deleted = deleteUserTokens(userId);
+    const deleted = await deleteUserTokens(userId);
     
     if (!deleted) {
       return res.status(404).json({
@@ -123,8 +132,7 @@ export class AuthController {
 
   // List all authenticated users
   getAllUsers = asyncHandler(async (req: Request, res: Response) => {
-    // This would typically be from a database in production
-    const users = getAllUserIds();
+    const users = await getAllUserIds();
 
     res.status(200).json({
       success: true,
@@ -146,7 +154,7 @@ export class AuthController {
       });
     }
 
-    const emails = getAllUserEmails(userId);
+    const emails = await getAllUserEmails(userId);
 
     res.status(200).json({
       success: true,
@@ -169,7 +177,7 @@ export class AuthController {
       });
     }
 
-    const deleted = deleteUserTokenByEmail(userId, email);
+    const deleted = await deleteUserTokenByEmail(userId, email);
     
     if (!deleted) {
       return res.status(404).json({

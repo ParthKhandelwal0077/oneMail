@@ -66,7 +66,7 @@ Create a `.env` file in the server directory:
 ```env
 # Server Configuration
 NODE_ENV=development
-PORT=5000
+PORT=5001
 CLIENT_URL=http://localhost:3000
 
 # Elasticsearch Configuration
@@ -77,7 +77,7 @@ ELASTICSEARCH_PASSWORD=password
 # Google OAuth (if not using credentials.json)
 GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:5000/api/auth/gmail/callback
+GOOGLE_REDIRECT_URI=http://localhost:5001/api/auth/gmail/callback
 ```
 
 ### 4. Start Elasticsearch
@@ -149,7 +149,7 @@ npm start
 
 ```bash
 # Get OAuth URL
-curl "http://localhost:5000/api/auth/gmail?userId=user123"
+curl "http://localhost:5001/api/auth/gmail?userId=user123"
 
 # User visits the returned URL and authorizes
 # Then handle the callback (this happens automatically)
@@ -159,37 +159,37 @@ curl "http://localhost:5000/api/auth/gmail?userId=user123"
 
 ```bash
 # Start syncing emails
-curl -X POST "http://localhost:5000/api/sync/start/user123"
+curl -X POST "http://localhost:5001/api/sync/start/user123"
 ```
 
 ### 3. Search Emails
 
 ```bash
 # Search for emails
-curl "http://localhost:5000/api/emails/search/user123?query=meeting&folder=INBOX"
+curl "http://localhost:5001/api/emails/search/user123?query=meeting&folder=INBOX"
 
 # Get recent emails
-curl "http://localhost:5000/api/emails/recent/user123"
+curl "http://localhost:5001/api/emails/recent/user123"
 
 # Get email statistics
-curl "http://localhost:5000/api/emails/stats/user123"
+curl "http://localhost:5001/api/emails/stats/user123"
 ```
 
 ### 4. Check Sync Status
 
 ```bash
 # Check sync status
-curl "http://localhost:5000/api/sync/status/user123"
+curl "http://localhost:5001/api/sync/status/user123"
 
 # Get all sync statuses
-curl "http://localhost:5000/api/sync/statuses"
+curl "http://localhost:5001/api/sync/statuses"
 ```
 
 ### 5. AI Categorization
 
 ```bash
 # Categorize a single email
-curl -X POST "http://localhost:5000/api/ai/categorize" \
+curl -X POST "http://localhost:5001/api/ai/categorize" \
   -H "Content-Type: application/json" \
   -d '{
     "subject": "Meeting Confirmation",
@@ -198,23 +198,23 @@ curl -X POST "http://localhost:5000/api/ai/categorize" \
   }'
 
 # Get available categories
-curl "http://localhost:5000/api/ai/categories"
+curl "http://localhost:5001/api/ai/categories"
 
 # Get category statistics
-curl "http://localhost:5000/api/ai/stats/user123"
+curl "http://localhost:5001/api/ai/stats/user123"
 
 # Check AI service status
-curl "http://localhost:5000/api/ai/status"
+curl "http://localhost:5001/api/ai/status"
 ```
 
 ### 6. Search with Category Filter
 
 ```bash
 # Search emails by category
-curl "http://localhost:5000/api/emails/search/user123?category=Interested"
+curl "http://localhost:5001/api/emails/search/user123?category=Interested"
 
 # Search with multiple filters
-curl "http://localhost:5000/api/emails/search/user123?query=meeting&category=Meeting Booked&folder=INBOX"
+curl "http://localhost:5001/api/emails/search/user123?query=meeting&category=Meeting Booked&folder=INBOX"
 ```
 
 ## Project Structure

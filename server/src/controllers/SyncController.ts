@@ -24,7 +24,7 @@ export class SyncController {
 
     try {
       // Check if user has valid authentication tokens
-      const tokens = getUserTokens(userId);
+      const tokens = await getUserTokens(userId);
       if (!tokens || tokens.length === 0) {
         return res.status(401).json({
           success: false,

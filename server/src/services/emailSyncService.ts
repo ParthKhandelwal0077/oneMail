@@ -204,7 +204,7 @@ export async function startIdleMonitoring(userId: string, email: string, client:
         startSync(userId, email).catch(err => 
           console.error(`❌ Failed to restart sync for ${userId}:`, err)
         );
-      }, 5000);
+      }, 5001);
     });
 
     // Store client reference
@@ -229,12 +229,12 @@ export async function startSync(userId: string, email: string): Promise<void> {
     });
 
     // Check if user has valid tokens for this email
-    const tokens = getUserTokens(userId);
+    const tokens = await getUserTokens(userId);
     if (!tokens || tokens.length === 0) {
       throw new Error(`No authorization tokens found for user ${userId}`);
     }
     
-    const emailToken = tokens.find(token => token.email === email);
+    const emailToken = tokens.find((token: any) => token.email === email);
     if (!emailToken) {
       throw new Error(`No authorization token found for email ${email} for user ${userId}`);
     }

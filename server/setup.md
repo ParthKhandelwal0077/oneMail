@@ -17,7 +17,7 @@
 2. Click "Create Credentials" > "OAuth client ID"
 3. Choose "Web application"
 4. Add authorized redirect URIs:
-   - `http://localhost:5000/api/auth/gmail/callback`
+   - `http://localhost:5001/api/auth/gmail/callback`
    - `http://localhost:3000/api/auth/gmail/callback`
 5. Download the JSON file
 6. Rename it to `credentials.json` and place it in the server root directory
@@ -36,7 +36,7 @@ Your `credentials.json` should look like this:
     "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
     "client_secret": "your-client-secret",
     "redirect_uris": [
-      "http://localhost:5000/api/auth/gmail/callback",
+      "http://localhost:5001/api/auth/gmail/callback",
       "http://localhost:3000/api/auth/gmail/callback"
     ]
   }
@@ -52,7 +52,7 @@ Create a `.env` file in the server directory:
 ```env
 # Server Configuration
 NODE_ENV=development
-PORT=5000
+PORT=5001
 CLIENT_URL=http://localhost:3000
 
 # Elasticsearch Configuration
@@ -63,7 +63,7 @@ ELASTICSEARCH_PASSWORD=password
 # Google OAuth (alternative to credentials.json)
 GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:5000/api/auth/gmail/callback
+GOOGLE_REDIRECT_URI=http://localhost:5001/api/auth/gmail/callback
 ```
 
 ## Quick Start Commands
@@ -79,26 +79,26 @@ docker run -d --name elasticsearch -p 9200:9200 -e "discovery.type=single-node" 
 npm run dev
 
 # 4. Test the setup
-curl http://localhost:5000/health
+curl http://localhost:5001/health
 ```
 
 ## Testing the API
 
 ### 1. Get a user ID and auth URL
 ```bash
-curl "http://localhost:5000/api/auth/gmail?userId=test-user"
+curl "http://localhost:5001/api/auth/gmail?userId=test-user"
 ```
 
 ### 2. Visit the returned URL to authorize
 
 ### 3. Start email synchronization
 ```bash
-curl -X POST "http://localhost:5000/api/sync/start/test-user"
+curl -X POST "http://localhost:5001/api/sync/start/test-user"
 ```
 
 ### 4. Search emails
 ```bash
-curl "http://localhost:5000/api/emails/search/test-user?query=hello"
+curl "http://localhost:5001/api/emails/search/test-user?query=hello"
 ```
 
 ## Troubleshooting

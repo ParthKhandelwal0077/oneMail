@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
+import prisma from '../config/prisma';
 import { UserTokens } from '../types';
 
 // Load Google credentials
@@ -39,9 +40,6 @@ const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_u
 
 const SCOPES = ['https://mail.google.com/'];
 
-// In-memory storage (replace with DB in production)
-const userTokens: Map<string, UserTokens[]> = new Map();
-
 export function getAuthUrl(userId: string): string {
   return oAuth2Client.generateAuthUrl({
     access_type: 'offline',
@@ -68,6 +66,46 @@ export async function handleCallback(code: string, userId: string): Promise<User
       console.warn('Could not fetch user email, using fallback:', emailError);
     }
     
+    // Check if user exists in database
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Check if email account already exists for this user
+    const existingEmailAccount = await prisma.emailAccount.findFirst({
+      where: {
+        userId: userId,
+        email: email
+      }
+    });
+
+    if (existingEmailAccount) {
+      // Update existing email account
+      await prisma.emailAccount.update({
+        where: { id: existingEmailAccount.id },
+        data: {
+          accessToken: tokens.access_token!,
+          refreshToken: tokens.refresh_token || existingEmailAccount.refreshToken,
+          expiryDate: new Date(tokens.expiry_date!)
+        }
+      });
+    } else {
+      // Create new email account
+      await prisma.emailAccount.create({
+        data: {
+          userId: userId,
+          email: email,
+          accessToken: tokens.access_token!,
+          refreshToken: tokens.refresh_token || null,
+          expiryDate: new Date(tokens.expiry_date!)
+        }
+      });
+    }
+    
     const userData: UserTokens = {
       email,
       access_token: tokens.access_token!,
@@ -75,19 +113,6 @@ export async function handleCallback(code: string, userId: string): Promise<User
       expiry_date: tokens.expiry_date!
     };
     
-    // Check if user already has tokens for this email
-    const existingTokens = userTokens.get(userId) || [];
-    const existingIndex = existingTokens.findIndex(token => token.email === email);
-    
-    if (existingIndex >= 0) {
-      // Update existing token for this email
-      existingTokens[existingIndex] = userData;
-    } else {
-      // Add new token for this email
-      existingTokens.push(userData);
-    }
-    
-    userTokens.set(userId, existingTokens);
     return userData;
   } catch (error) {
     console.error('Token exchange failed:', error);
@@ -96,78 +121,131 @@ export async function handleCallback(code: string, userId: string): Promise<User
 }
 
 export async function getAccessToken(userId: string, email?: string): Promise<string> {
-  const tokensArray = userTokens.get(userId);
-  if (!tokensArray || tokensArray.length === 0) {
+  // Get email accounts for user from database
+  const emailAccounts = await prisma.emailAccount.findMany({
+    where: { userId: userId }
+  });
+
+  if (!emailAccounts || emailAccounts.length === 0) {
     throw new Error(`No tokens for user ${userId}`);
   }
 
-  // If email is specified, find the specific token
-  let targetTokens = email 
-    ? tokensArray.find(tokens => tokens.email === email)
-    : tokensArray[0]; // Default to first token if no email specified
+  // If email is specified, find the specific account
+  let targetAccount = email 
+    ? emailAccounts.find(account => account.email === email)
+    : emailAccounts[0]; // Default to first account if no email specified
 
-  if (!targetTokens) {
+  if (!targetAccount) {
     throw new Error(`No tokens found for email ${email} for user ${userId}`);
   }
 
-  oAuth2Client.setCredentials(targetTokens);
-  if (targetTokens.expiry_date <= Date.now()) {
+  // Check if token is expired and refresh if needed
+  if (targetAccount.expiryDate <= new Date()) {
+    if (!targetAccount.refreshToken) {
+      throw new Error('Token expired and no refresh token available');
+    }
+
     try {
+      oAuth2Client.setCredentials({
+        access_token: targetAccount.accessToken,
+        refresh_token: targetAccount.refreshToken
+      });
+
       const { credentials } = await oAuth2Client.refreshAccessToken();
-      const updatedTokens: UserTokens = {
-        ...targetTokens,
-        access_token: credentials.access_token!,
-        refresh_token: credentials.refresh_token || targetTokens.refresh_token,
-        expiry_date: credentials.expiry_date!
-      };
       
-      // Update the specific token in the array
-      const tokenIndex = tokensArray.findIndex(tokens => tokens.email === targetTokens.email);
-      if (tokenIndex >= 0) {
-        tokensArray[tokenIndex] = updatedTokens;
-        userTokens.set(userId, tokensArray);
-      }
-      
-      oAuth2Client.setCredentials(updatedTokens);
+      // Update the token in database
+      await prisma.emailAccount.update({
+        where: { id: targetAccount.id },
+        data: {
+          accessToken: credentials.access_token!,
+          refreshToken: credentials.refresh_token || targetAccount.refreshToken,
+          expiryDate: new Date(credentials.expiry_date!)
+        }
+      });
+
+      targetAccount.accessToken = credentials.access_token!;
+      targetAccount.refreshToken = credentials.refresh_token || targetAccount.refreshToken;
+      targetAccount.expiryDate = new Date(credentials.expiry_date!);
     } catch (error) {
       console.error('Token refresh failed:', error);
       throw new Error('Failed to refresh access token');
     }
   }
-  return oAuth2Client.credentials.access_token!;
+
+  return targetAccount.accessToken;
 }
 
-export function getUserTokens(userId: string): UserTokens[] | undefined {
-  return userTokens.get(userId);
+export async function getUserTokens(userId: string): Promise<UserTokens[]> {
+  const emailAccounts = await prisma.emailAccount.findMany({
+    where: { userId: userId }
+  });
+
+  return emailAccounts.map(account => ({
+    email: account.email,
+    access_token: account.accessToken,
+    refresh_token: account.refreshToken || undefined,
+    expiry_date: account.expiryDate.getTime()
+  }));
 }
 
-export function getUserTokenByEmail(userId: string, email: string): UserTokens | undefined {
-  const tokensArray = userTokens.get(userId);
-  return tokensArray?.find(tokens => tokens.email === email);
+export async function getUserTokenByEmail(userId: string, email: string): Promise<UserTokens | undefined> {
+  const emailAccount = await prisma.emailAccount.findFirst({
+    where: {
+      userId: userId,
+      email: email
+    }
+  });
+
+  if (!emailAccount) {
+    return undefined;
+  }
+
+  return {
+    email: emailAccount.email,
+    access_token: emailAccount.accessToken,
+    refresh_token: emailAccount.refreshToken || undefined,
+    expiry_date: emailAccount.expiryDate.getTime()
+  };
 }
 
-export function deleteUserTokens(userId: string): boolean {
-  return userTokens.delete(userId);
-}
-
-export function deleteUserTokenByEmail(userId: string, email: string): boolean {
-  const tokensArray = userTokens.get(userId);
-  if (!tokensArray) return false;
-  
-  const filteredTokens = tokensArray.filter(tokens => tokens.email !== email);
-  if (filteredTokens.length === 0) {
-    return userTokens.delete(userId);
-  } else {
-    userTokens.set(userId, filteredTokens);
+export async function deleteUserTokens(userId: string): Promise<boolean> {
+  try {
+    await prisma.emailAccount.deleteMany({
+      where: { userId: userId }
+    });
     return true;
+  } catch (error) {
+    console.error('Failed to delete user tokens:', error);
+    return false;
   }
 }
 
-export function getAllUserIds(): string[] {
-  return Array.from(userTokens.keys());
+export async function deleteUserTokenByEmail(userId: string, email: string): Promise<boolean> {
+  try {
+    const result = await prisma.emailAccount.deleteMany({
+      where: {
+        userId: userId,
+        email: email
+      }
+    });
+    return result.count > 0;
+  } catch (error) {
+    console.error('Failed to delete email token:', error);
+    return false;
+  }
 }
 
-export function getAllUserEmails(userId: string): string[] {
-  const tokensArray = userTokens.get(userId);
-  return tokensArray?.map(tokens => tokens.email) || [];
+export async function getAllUserIds(): Promise<string[]> {
+  const users = await prisma.user.findMany({
+    select: { id: true }
+  });
+  return users.map(user => user.id);
+}
+
+export async function getAllUserEmails(userId: string): Promise<string[]> {
+  const emailAccounts = await prisma.emailAccount.findMany({
+    where: { userId: userId },
+    select: { email: true }
+  });
+  return emailAccounts.map(account => account.email);
 }

@@ -15,7 +15,7 @@ import { checkDatabaseConnection, closePrismaConnection } from './config/prisma'
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Security middleware
 app.use(helmet({
@@ -29,11 +29,50 @@ app.use(helmet({
   },
 }));
 
+// CORS configuration with multiple origins support
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:8080',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:8080',
+  // Add network IP patterns for development
+  /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
+  /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/,
+  /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+:\d+$/
+];
+
+// Add custom CLIENT_URL if provided
+if (process.env.CLIENT_URL) {
+  allowedOrigins.push(process.env.CLIENT_URL);
+}
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowed list
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (typeof allowedOrigin === 'string') {
+        return origin === allowedOrigin;
+      } else if (allowedOrigin instanceof RegExp) {
+        return allowedOrigin.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  preflightContinue: false,
+  optionsSuccessStatus: 200
 }));
 
 // Logging middleware
@@ -79,18 +118,20 @@ app.get('/health', async (req, res) => {
 
 // Quick start endpoint for testing
 app.get('/start', (req, res) => {
-  const userId = "e2e8e515-b404-4048-97bb-51eb545f9f8a";
   res.json({
     message: 'OneBox Email Aggregator is running!',
     quickStart: {
-      userId,
       steps: [
-        `1. Authenticate: GET /api/auth/gmail?userId=${userId}`,
-        `2. Check auth status: GET /api/auth/status/${userId}`,
-        `3. Start sync: POST /api/sync/start/${userId}`,
-        `4. Search emails: GET /api/emails/search/${userId}?query=your-search`,
-        `5. Get stats: GET /api/emails/stats/${userId}`
-      ]
+        '1. Register: POST /api/user-auth/register { "phoneNumber": "+1234567890", "password": "yourPassword" }',
+        '2. Login: POST /api/user-auth/login { "phoneNumber": "+1234567890", "password": "yourPassword" }',
+        '3. Get Gmail auth URL: GET /api/auth/gmail (with Authorization header)',
+        '4. Complete OAuth callback: GET /api/auth/gmail/callback?code=...&state=...',
+        '5. Check auth status: GET /api/auth/status/{userId} (with Authorization header)',
+        '6. Start sync: POST /api/sync/start/{userId} (with Authorization header)',
+        '7. Search emails: GET /api/emails/search/{userId}?query=your-search (with Authorization header)',
+        '8. Get stats: GET /api/emails/stats/{userId} (with Authorization header)'
+      ],
+      note: 'All API endpoints (except registration/login) require Authorization header with Bearer token'
     }
   });
 });

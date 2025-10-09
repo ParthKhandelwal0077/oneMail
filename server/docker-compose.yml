@@ -41,7 +41,7 @@ services:
       - ELASTICSEARCH_USERNAME=elastic
       - ELASTICSEARCH_PASSWORD=password
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/email_onebox?schema=public
-      - CLIENT_URL=http://localhost:8000
+      - CLIENT_URL=${CLIENT_URL:-http://localhost:8080}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     ports:
       - "5001:5001"

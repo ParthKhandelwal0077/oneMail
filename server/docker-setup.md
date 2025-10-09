@@ -119,7 +119,7 @@ Create a `.env` file in the server directory:
 
 ```env
 NODE_ENV=production
-PORT=5000
+PORT=5001
 ELASTICSEARCH_URL=http://elasticsearch:9200
 CLIENT_URL=http://localhost:3000
 ```
@@ -128,7 +128,7 @@ CLIENT_URL=http://localhost:3000
 
 ```env
 NODE_ENV=production
-PORT=5000
+PORT=5001
 ELASTICSEARCH_URL=http://localhost:9200
 CLIENT_URL=http://localhost:3000
 ```
@@ -142,7 +142,7 @@ CLIENT_URL=http://localhost:3000
 docker ps
 
 # Check API health
-curl http://localhost:5000/health
+curl http://localhost:5001/health
 
 # Check Elasticsearch health
 curl http://localhost:9200/_cluster/health
@@ -166,11 +166,11 @@ docker logs -f onebox-elasticsearch
 1. **Port Already in Use**
    ```bash
    # Check what's using the port
-   lsof -i :5000
+   lsof -i :5001
    lsof -i :9200
    
    # Stop conflicting services
-   docker stop $(docker ps -q --filter "publish=5000")
+   docker stop $(docker ps -q --filter "publish=5001")
    docker stop $(docker ps -q --filter "publish=9200")
    ```
 
@@ -283,7 +283,7 @@ docker-compose --profile monitoring up -d
 # Set up monitoring script
 #!/bin/bash
 while true; do
-  curl -f http://localhost:5000/health || echo "API is down"
+  curl -f http://localhost:5001/health || echo "API is down"
   curl -f http://localhost:9200/_cluster/health || echo "Elasticsearch is down"
   sleep 30
 done
