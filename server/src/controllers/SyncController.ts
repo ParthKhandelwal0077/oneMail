@@ -5,6 +5,7 @@ import {
   getSyncStatus, 
   getAllSyncStatuses,
   getActiveClients,
+  getActiveEmailAccounts,
   restartAllSyncs
 } from '../services/emailSyncService';
 import { getUserTokens } from '../services/authService';
@@ -13,12 +14,20 @@ import { asyncHandler } from '../middleware/errorHandler';
 export class SyncController {
   // Start email synchronization for a user
   startSync = asyncHandler(async (req: Request, res: Response) => {
-    const { userId } = req.params;
+    const { userId, email } = req.params;
 
     if (!userId) {
       return res.status(400).json({
         success: false,
         error: 'User ID is required'
+      });
+    }
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is required',
+        message: 'Please specify which email account to sync'
       });
     }
 
@@ -30,15 +39,6 @@ export class SyncController {
           success: false,
           error: 'User not authenticated',
           message: 'User needs to authenticate with Gmail first'
-        });
-      }
-
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({
-          success: false,
-          error: 'Email is required',
-          message: 'Please specify which email account to sync'
         });
       }
 
@@ -78,6 +78,7 @@ export class SyncController {
   // Stop email synchronization for a user
   stopSync = asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
+    const { email } = req.body; // Optional email parameter
 
     if (!userId) {
       return res.status(400).json({
@@ -87,17 +88,34 @@ export class SyncController {
     }
 
     try {
-      await stopSync(userId);
-      
-      res.status(200).json({
-        success: true,
-        message: 'Email synchronization stopped successfully',
-        data: {
-          userId,
-          status: 'stopped',
-          stoppedAt: new Date()
-        }
-      });
+      if (email) {
+        // Stop specific email sync
+        await stopSync(userId, email);
+        
+        res.status(200).json({
+          success: true,
+          message: `Email synchronization stopped for ${email}`,
+          data: {
+            userId,
+            email,
+            status: 'stopped',
+            stoppedAt: new Date()
+          }
+        });
+      } else {
+        // Stop all email syncs for user
+        await stopSync(userId);
+        
+        res.status(200).json({
+          success: true,
+          message: 'All email synchronizations stopped',
+          data: {
+            userId,
+            status: 'stopped',
+            stoppedAt: new Date()
+          }
+        });
+      }
     } catch (error) {
       console.error('Stop sync error:', error);
       res.status(500).json({
@@ -111,6 +129,7 @@ export class SyncController {
   // Get synchronization status for a user
   getSyncStatus = asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
+    const { email } = req.query; // Optional email query parameter
 
     if (!userId) {
       return res.status(400).json({
@@ -120,7 +139,7 @@ export class SyncController {
     }
 
     try {
-      const status = await getSyncStatus(userId);
+      const status = await getSyncStatus(userId, email as string);
       
       if (!status) {
         return res.status(404).json({
@@ -132,7 +151,10 @@ export class SyncController {
 
       res.status(200).json({
         success: true,
-        data: { status }
+        data: { 
+          status,
+          isArray: Array.isArray(status)
+        }
       });
     } catch (error) {
       console.error('Get sync status error:', error);
@@ -172,12 +194,15 @@ export class SyncController {
   getActiveClients = asyncHandler(async (req: Request, res: Response) => {
     try {
       const activeClients = await getActiveClients();
+      const activeEmailAccounts = await getActiveEmailAccounts();
       
       res.status(200).json({
         success: true,
         data: {
           activeClients,
-          count: activeClients.length
+          activeEmailAccounts,
+          clientCount: activeClients.length,
+          emailAccountCount: activeEmailAccounts.length
         }
       });
     } catch (error) {
@@ -218,6 +243,7 @@ export class SyncController {
     try {
       const statuses = await getAllSyncStatuses();
       const activeClients = await getActiveClients();
+      const activeEmailAccounts = await getActiveEmailAccounts();
       
       const health = {
         status: 'healthy',
@@ -230,7 +256,8 @@ export class SyncController {
             stopped: statuses.filter(s => s.status === 'stopped').length
           },
           clients: {
-            connected: activeClients.length
+            connected: activeClients.length,
+            emailAccounts: activeEmailAccounts.length
           }
         }
       };

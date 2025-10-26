@@ -4,6 +4,7 @@ import emailRoutes from './emails';
 import syncRoutes from './sync';
 import aiRoutes from './ai';
 import userAuthRoutes from './userAuth';
+import websocketRoutes from './websocket';
 
 const router = Router();
 
@@ -13,6 +14,7 @@ router.use('/user', userAuthRoutes); // User authentication routes
 router.use('/emails', emailRoutes);
 router.use('/sync', syncRoutes);
 router.use('/ai', aiRoutes);
+router.use('/websocket', websocketRoutes); // WebSocket management routes
 
 // API info endpoint
 router.get('/', (req, res) => {
@@ -25,7 +27,8 @@ router.get('/', (req, res) => {
       user: '/api/user', // User authentication
       emails: '/api/emails',
       sync: '/api/sync',
-      ai: '/api/ai'
+      ai: '/api/ai',
+      websocket: '/api/websocket' // WebSocket management
     },
     features: [
       'User authentication with JWT',
@@ -34,7 +37,8 @@ router.get('/', (req, res) => {
       'Elasticsearch-powered search',
       'Multi-account email aggregation',
       'AI-powered email categorization',
-      'Smart email filtering and tagging'
+      'Smart email filtering and tagging',
+      'Real-time WebSocket notifications'
     ]
   });
 });

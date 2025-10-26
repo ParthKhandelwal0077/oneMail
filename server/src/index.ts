@@ -4,18 +4,23 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
+import { createServer } from 'http';
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/notFound';
 import apiRoutes from './routes';
 import { setupElasticsearch, closeElasticsearch } from './services/elasticsearchService';
 import { gracefulShutdown } from './services/emailSyncService';
 import { checkDatabaseConnection, closePrismaConnection } from './config/prisma';
+import { initializeWebSocketService } from './services/webSocketService';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+
+// Create HTTP server for WebSocket support
+const server = createServer(app);
 
 // Security middleware
 app.use(helmet({
@@ -127,7 +132,7 @@ app.get('/start', (req, res) => {
         '3. Get Gmail auth URL: GET /api/auth/gmail (with Authorization header)',
         '4. Complete OAuth callback: GET /api/auth/gmail/callback?code=...&state=...',
         '5. Check auth status: GET /api/auth/status/{userId} (with Authorization header)',
-        '6. Start sync: POST /api/sync/start/{userId} (with Authorization header)',
+        '6. Start sync: POST /api/sync/start/{userId}/{email} (with Authorization header)',
         '7. Search emails: GET /api/emails/search/{userId}?query=your-search (with Authorization header)',
         '8. Get stats: GET /api/emails/stats/{userId} (with Authorization header)'
       ],
@@ -154,6 +159,10 @@ async function initializeServices() {
     // Initialize Elasticsearch
     await setupElasticsearch();
     console.log('✅ Elasticsearch initialized successfully');
+
+    // Initialize WebSocket service
+    initializeWebSocketService(server);
+    console.log('✅ WebSocket service initialized successfully');
   } catch (error) {
     console.error('❌ Service initialization failed:', error);
     process.exit(1);
@@ -194,13 +203,14 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log('\n🚀 OneBox Email Aggregator Server');
   console.log('================================');
   console.log(`📧 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📱 Client URL: ${process.env.CLIENT_URL || 'http://localhost:3000'}`);
   console.log(`🔍 Elasticsearch: ${process.env.ELASTICSEARCH_URL || 'http://localhost:9200'}`);
+  console.log(`🔌 WebSocket: ws://localhost:${PORT}/ws`);
   console.log('\n📋 Quick Start:');
   console.log(`   GET http://localhost:${PORT}/start`);
   console.log(`   GET http://localhost:${PORT}/health`);
@@ -208,7 +218,9 @@ app.listen(PORT, () => {
   console.log(`   Authentication: http://localhost:${PORT}/api/auth`);
   console.log(`   Emails: http://localhost:${PORT}/api/emails`);
   console.log(`   Sync: http://localhost:${PORT}/api/sync`);
-  console.log('\n✨ Ready to aggregate emails!');
+  console.log('\n🔌 WebSocket:');
+  console.log(`   Connect: ws://localhost:${PORT}/ws?token=<jwt-token>`);
+  console.log('\n✨ Ready to aggregate emails with real-time notifications!');
 });
 
 export default app;
