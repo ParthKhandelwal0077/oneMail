@@ -10,7 +10,7 @@ const syncController = new SyncController();
 router.use(authenticateToken);
 
 // Synchronization routes with user access validation
-router.post('/start/:userId', validateUserAccess, syncController.startSync);
+router.post('/start/:userId/:email', validateUserAccess, syncController.startSync);
 router.post('/stop/:userId', validateUserAccess, syncController.stopSync);
 router.get('/status/:userId', validateUserAccess, syncController.getSyncStatus);
 

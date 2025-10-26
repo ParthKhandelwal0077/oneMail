@@ -2,11 +2,12 @@ import { ImapFlow } from 'imapflow';
 import { getAccessToken, getUserTokens } from './authService';
 import { indexEmail, checkEmailExists } from './elasticsearchService';
 import { categorizeEmail } from './aiCategorizationService';
-import { EmailCategory, ImapClient, SyncStatus } from '../types';
+import { getWebSocketService } from './webSocketService';
+import { EmailCategory, EmailMessage, ImapClient, SyncStatus } from '../types';
 
-// Store active IMAP clients for each user
-const userClients: Map<string, ImapClient> = new Map();
-const syncStatuses: Map<string, SyncStatus> = new Map();
+// Store active IMAP clients for each user and email account
+const userClients: Map<string, Map<string, ImapClient>> = new Map(); // userId -> email -> client
+const syncStatuses: Map<string, Map<string, SyncStatus>> = new Map(); // userId -> email -> status
 
 export async function fetchRecentEmails(userId: string, email: string): Promise<ImapFlow> {
   try {
@@ -89,6 +90,26 @@ export async function fetchRecentEmails(userId: string, email: string): Promise<
           body: message.source?.toString() || ''
         }, category as EmailCategory);
         
+        // Send real-time notification via WebSocket
+        const wsService = getWebSocketService();
+        if (wsService && wsService.isUserConnected(userId)) {
+          const emailData = {
+            userId,
+            uid: message.uid.toString(),
+            subject: message.envelope?.subject || 'No Subject',
+            from: message.envelope?.from?.[0]?.address || 'unknown@example.com',
+            date: message.envelope?.date || new Date(),
+            body: message.source?.toString() || '',
+            folder,
+            email,
+            category: category as EmailCategory,
+            categoryConfidence: 0.9,
+            categorizedAt: new Date()
+          };
+          
+          wsService.sendNewEmailNotification(userId, emailData);
+        }
+        
         emailCount++;
       } catch (error) {
         console.error(`  ❌ Failed to process email ${message.uid}:`, error);
@@ -110,13 +131,22 @@ export async function startIdleMonitoring(userId: string, email: string, client:
     
     console.log(`🔄 Starting IDLE monitoring for ${userId} (${email})`);
     
-    // Update sync status
-    syncStatuses.set(userId, {
+    // Update sync status in nested map
+    if (!syncStatuses.has(userId)) {
+      syncStatuses.set(userId, new Map());
+    }
+    syncStatuses.get(userId)!.set(email, {
       userId,
       email,
       status: 'idle',
       lastSync: new Date()
     });
+
+    // Send sync status notification via WebSocket
+    const wsService = getWebSocketService();
+    if (wsService && wsService.isUserConnected(userId)) {
+      wsService.sendSyncStatusNotification(userId, 'idle', email);
+    }
 
     const idleStarted = await client.idle();
 
@@ -172,6 +202,27 @@ export async function startIdleMonitoring(userId: string, email: string, client:
             ...message,
             body: message.source?.toString() || ''
           }, category as EmailCategory);
+          
+          // Send real-time notification via WebSocket for new email
+          const wsService = getWebSocketService();
+          if (wsService && wsService.isUserConnected(userId)) {
+            const emailData = {
+              userId,
+              uid: message.uid.toString(),
+              subject: message.envelope?.subject || 'No Subject',
+              from: message.envelope?.from?.[0]?.address || 'unknown@example.com',
+              date: message.envelope?.date || new Date(),
+              body: message.source?.toString() || '',
+              folder,
+              email,
+              category: category as EmailCategory,
+              categoryConfidence: 0.9,
+              categorizedAt: new Date()
+            };
+
+            wsService.sendNewEmailNotification(userId, emailData);
+            console.log(`📡 Sent real-time notification for new email to user ${userId}`);
+          }
         }
       } catch (error) {
         console.error(`  ❌ Failed to process new email for ${userId}:`, error);
@@ -182,8 +233,11 @@ export async function startIdleMonitoring(userId: string, email: string, client:
     client.on('error', async (error) => {
       console.error(`❌ IDLE error for ${userId} (${email}):`, error);
       
-      // Update sync status
-      syncStatuses.set(userId, {
+      // Update sync status in nested map
+      if (!syncStatuses.has(userId)) {
+        syncStatuses.set(userId, new Map());
+      }
+      syncStatuses.get(userId)!.set(email, {
         userId,
         email,
         status: 'error',
@@ -200,15 +254,18 @@ export async function startIdleMonitoring(userId: string, email: string, client:
       
       // Attempt to restart sync after delay
       setTimeout(() => {
-        console.log(`🔄 Attempting to restart sync for ${userId}...`);
+        console.log(`🔄 Attempting to restart sync for ${userId} (${email})...`);
         startSync(userId, email).catch(err => 
-          console.error(`❌ Failed to restart sync for ${userId}:`, err)
+          console.error(`❌ Failed to restart sync for ${userId} (${email}):`, err)
         );
-      }, 5001);
+      }, 5000);
     });
 
-    // Store client reference
-    userClients.set(userId, { client, lock: idleStarted });
+    // Store client reference in nested map
+    if (!userClients.has(userId)) {
+      userClients.set(userId, new Map());
+    }
+    userClients.get(userId)!.set(email, { client, lock: idleStarted });
     
   } catch (error) {
     console.error(`❌ Failed to start IDLE monitoring for ${userId}:`, error);
@@ -220,13 +277,22 @@ export async function startSync(userId: string, email: string): Promise<void> {
   try {
     console.log(`🚀 Starting full sync for ${userId} (${email})`);
     
-    // Update sync status
-    syncStatuses.set(userId, {
+    // Update sync status in nested map
+    if (!syncStatuses.has(userId)) {
+      syncStatuses.set(userId, new Map());
+    }
+    syncStatuses.get(userId)!.set(email, {
       userId,
       email,
       status: 'syncing',
       lastSync: new Date()
     });
+
+    // Send sync status notification via WebSocket
+    const wsService = getWebSocketService();
+    if (wsService && wsService.isUserConnected(userId)) {
+      wsService.sendSyncStatusNotification(userId, 'syncing', email);
+    }
 
     // Check if user has valid tokens for this email
     const tokens = await getUserTokens(userId);
@@ -247,89 +313,198 @@ export async function startSync(userId: string, email: string): Promise<void> {
   } catch (error) {
     console.error(`❌ Full sync failed for ${userId} (${email}):`, error);
     
-    // Update sync status with error
-    syncStatuses.set(userId, {
+    // Update sync status with error in nested map
+    if (!syncStatuses.has(userId)) {
+      syncStatuses.set(userId, new Map());
+    }
+    syncStatuses.get(userId)!.set(email, {
       userId,
       email,
       status: 'error',
       error: error instanceof Error ? error.message : 'Unknown error',
       lastSync: new Date()
     });
+
+    // Send error notification via WebSocket
+    const wsService = getWebSocketService();
+    if (wsService && wsService.isUserConnected(userId)) {
+      wsService.sendSyncStatusNotification(userId, 'error', email, error instanceof Error ? error.message : 'Unknown error');
+    }
     
     throw error;
   }
 }
 
-export async function stopSync(userId: string): Promise<void> {
+export async function stopSync(userId: string, email?: string): Promise<void> {
   try {
-    console.log(`🛑 Stopping sync for ${userId}`);
-    
-    const clientData = userClients.get(userId);
-    if (clientData) {
-      // Close IDLE connection
-      try {
-        clientData.client.close();
-      } catch (error) {
-        console.error('Error closing IDLE connection:', error);
-      }
-      
-      // Close client connection
-      try {
-        await clientData.client.logout();
-      } catch (error) {
-        console.error('Error closing IMAP connection:', error);
-      }
-      
-      // Remove from active clients
-      userClients.delete(userId);
+    if (email) {
+      console.log(`🛑 Stopping sync for ${userId} (${email})`);
+    } else {
+      console.log(`🛑 Stopping all syncs for ${userId}`);
     }
     
-    // Update sync status
-    syncStatuses.set(userId, {
-      userId,
-      email: syncStatuses.get(userId)?.email || 'unknown',
-      status: 'stopped',
-      lastSync: new Date()
-    });
+    const userClientMap = userClients.get(userId);
+    const userStatusMap = syncStatuses.get(userId);
     
-    console.log(`✅ Sync stopped for ${userId}`);
+    if (!userClientMap || !userStatusMap) {
+      console.log(`⚠️  No active syncs found for ${userId}`);
+      return;
+    }
+    
+    if (email) {
+      // Stop specific email sync
+      const clientData = userClientMap.get(email);
+      if (clientData) {
+        // Close IDLE connection
+        try {
+          clientData.client.close();
+        } catch (error) {
+          console.error('Error closing IDLE connection:', error);
+        }
+        
+        // Close client connection
+        try {
+          await clientData.client.logout();
+        } catch (error) {
+          console.error('Error closing IMAP connection:', error);
+        }
+        
+        // Remove from active clients
+        userClientMap.delete(email);
+        
+        // Update sync status
+        userStatusMap.set(email, {
+          userId,
+          email,
+          status: 'stopped',
+          lastSync: new Date()
+        });
+        
+        // Send stop notification via WebSocket
+        const wsService = getWebSocketService();
+        if (wsService && wsService.isUserConnected(userId)) {
+          wsService.sendSyncStatusNotification(userId, 'stopped', email);
+        }
+        
+        console.log(`✅ Sync stopped for ${userId} (${email})`);
+      } else {
+        console.log(`⚠️  No active sync found for ${userId} (${email})`);
+      }
+    } else {
+      // Stop all email syncs for this user
+      for (const [emailAccount, clientData] of userClientMap) {
+        try {
+          // Close IDLE connection
+          try {
+            clientData.client.close();
+          } catch (error) {
+            console.error('Error closing IDLE connection:', error);
+          }
+          
+          // Close client connection
+          try {
+            await clientData.client.logout();
+          } catch (error) {
+            console.error('Error closing IMAP connection:', error);
+          }
+          
+          // Update sync status
+          userStatusMap.set(emailAccount, {
+            userId,
+            email: emailAccount,
+            status: 'stopped',
+            lastSync: new Date()
+          });
+          
+          // Send stop notification via WebSocket
+          const wsService = getWebSocketService();
+          if (wsService && wsService.isUserConnected(userId)) {
+            wsService.sendSyncStatusNotification(userId, 'stopped', emailAccount);
+          }
+          
+          console.log(`✅ Sync stopped for ${userId} (${emailAccount})`);
+        } catch (error) {
+          console.error(`❌ Error stopping sync for ${userId} (${emailAccount}):`, error);
+        }
+      }
+      
+      // Remove user from active clients and statuses
+      userClients.delete(userId);
+      syncStatuses.delete(userId);
+      
+      console.log(`✅ All syncs stopped for ${userId}`);
+    }
   } catch (error) {
     console.error(`❌ Error stopping sync for ${userId}:`, error);
     throw error;
   }
 }
 
-export async function getSyncStatus(userId: string): Promise<SyncStatus | null> {
-  return syncStatuses.get(userId) || null;
+export async function getSyncStatus(userId: string, email?: string): Promise<SyncStatus | SyncStatus[] | null> {
+  const userStatusMap = syncStatuses.get(userId);
+  
+  if (!userStatusMap) {
+    return null;
+  }
+  
+  if (email) {
+    // Return specific email status
+    return userStatusMap.get(email) || null;
+  } else {
+    // Return all email statuses for this user
+    return Array.from(userStatusMap.values());
+  }
 }
 
 export async function getAllSyncStatuses(): Promise<SyncStatus[]> {
-  return Array.from(syncStatuses.values());
+  const allStatuses: SyncStatus[] = [];
+  
+  for (const userStatusMap of syncStatuses.values()) {
+    for (const status of userStatusMap.values()) {
+      allStatuses.push(status);
+    }
+  }
+  
+  return allStatuses;
 }
 
 export async function getActiveClients(): Promise<string[]> {
   return Array.from(userClients.keys());
 }
 
+export async function getActiveEmailAccounts(): Promise<{ userId: string; email: string }[]> {
+  const activeAccounts: { userId: string; email: string }[] = [];
+  
+  for (const [userId, userClientMap] of userClients) {
+    for (const email of userClientMap.keys()) {
+      activeAccounts.push({ userId, email });
+    }
+  }
+  
+  return activeAccounts;
+}
+
 export async function restartAllSyncs(): Promise<void> {
   console.log('🔄 Restarting all active syncs...');
   
-  for (const [userId, clientData] of userClients) {
-    try {
-      const syncStatus = syncStatuses.get(userId);
-      if (syncStatus && syncStatus.email) {
-        await stopSync(userId);
-        // Wait a bit before restarting
-        setTimeout(async () => {
-          try {
-            await startSync(userId, syncStatus.email);
-          } catch (error) {
-            console.error(`Failed to restart sync for ${userId}:`, error);
-          }
-        }, 2000);
+  for (const [userId, userClientMap] of userClients) {
+    for (const [email, clientData] of userClientMap) {
+      try {
+        const syncStatus = syncStatuses.get(userId)?.get(email);
+        if (syncStatus && syncStatus.email) {
+          await stopSync(userId, email);
+          // Wait a bit before restarting
+          setTimeout(async () => {
+            try {
+              await startSync(userId, email);
+            } catch (error) {
+              console.error(`Failed to restart sync for ${userId} (${email}):`, error);
+            }
+          }, 2000);
+        }
+      } catch (error) {
+        console.error(`Error restarting sync for ${userId} (${email}):`, error);
       }
-    } catch (error) {
-      console.error(`Error restarting sync for ${userId}:`, error);
     }
   }
 }
@@ -340,7 +515,7 @@ export async function gracefulShutdown(): Promise<void> {
   
   for (const userId of userClients.keys()) {
     try {
-      await stopSync(userId);
+      await stopSync(userId); // This will stop all email syncs for the user
     } catch (error) {
       console.error(`Error stopping sync for ${userId} during shutdown:`, error);
     }
