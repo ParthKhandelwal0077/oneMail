@@ -111,10 +111,16 @@ npm start
 
 ### Authentication
 
-- `GET /api/auth/gmail?userId={userId}` - Get OAuth URL
-- `GET /api/auth/gmail/callback?code={code}&state={userId}` - OAuth callback
-- `GET /api/auth/status/{userId}` - Check auth status
-- `DELETE /api/auth/revoke/{userId}` - Revoke authentication
+- `GET /api/auth/gmail` - Get OAuth URL for adding new email account
+- `GET /api/auth/gmail/callback?code={code}&state={userId}` - OAuth callback handler
+- `GET /api/auth/status/{userId}` - Get user's email accounts (attached emails) with authentication status
+- `GET /api/auth/emails/{userId}` - Get list of all email addresses for a user
+- `DELETE /api/auth/revoke/{userId}` - Revoke all email authentication for a user
+- `DELETE /api/auth/revoke/{userId}/{email}` - Revoke authentication for a specific email account
+
+> 💡 **For frontend developers**: 
+> - See [API_REFERENCE.md](./API_REFERENCE.md) for complete API reference and usage examples
+> - See [ADD_EMAIL_ACCOUNT_GUIDE.md](./ADD_EMAIL_ACCOUNT_GUIDE.md) for detailed step-by-step implementation guide
 
 ### Email Synchronization
 
